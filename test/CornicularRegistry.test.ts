@@ -849,14 +849,14 @@ describe("CornicularRegistry (upgradeable)", function () {
       expect(event?.args.issuer).to.equal(issuer.address)
     })
 
-    it("emits FileRevoked on revoke", async function () {
-      const { registry, issuer, fileHash, metadataHash } =
+    it("emits FileRevoked with issuer and revoking actor", async function () {
+      const { registry, issuer, newOwner, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).register(fileHash, metadataHash, newOwner.address)
       const [certificateId] = await registry.verify(fileHash)
-      await expect(registry.connect(issuer).revoke(certificateId))
+      await expect(registry.connect(newOwner).revoke(certificateId))
         .to.emit(registry, "FileRevoked")
-        .withArgs(certificateId, issuer.address)
+        .withArgs(certificateId, issuer.address, newOwner.address)
     })
 
     it("emits FileReplaced on replace", async function () {
@@ -883,14 +883,14 @@ describe("CornicularRegistry (upgradeable)", function () {
       expect(replaced?.args.issuer).to.equal(issuer.address)
     })
 
-    it("emits FileRemoved on remove", async function () {
-      const { registry, issuer, fileHash, metadataHash } =
+    it("emits FileRemoved with issuer and removing actor", async function () {
+      const { registry, issuer, newOwner, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).register(fileHash, metadataHash, newOwner.address)
       const [certificateId] = await registry.verify(fileHash)
-      await expect(registry.connect(issuer).remove(certificateId))
+      await expect(registry.connect(newOwner).remove(certificateId))
         .to.emit(registry, "FileRemoved")
-        .withArgs(certificateId, issuer.address)
+        .withArgs(certificateId, issuer.address, newOwner.address)
     })
 
     it("emits FileOwnershipTransferred on transfer", async function () {

@@ -77,14 +77,22 @@ contract CornicularRegistry is
         address indexed issuer,
         uint256 registeredAt
     );
-    event FileRevoked(bytes32 indexed certificateId, address indexed issuer);
+    event FileRevoked(
+        bytes32 indexed certificateId,
+        address indexed issuer,
+        address indexed actor
+    );
     event FileReplaced(
         bytes32 indexed previousCertificateId,
         bytes32 indexed newCertificateId,
         address indexed issuer,
         address newOwner
     );
-    event FileRemoved(bytes32 indexed certificateId, address indexed actor);
+    event FileRemoved(
+        bytes32 indexed certificateId,
+        address indexed issuer,
+        address indexed actor
+    );
     event FileOwnershipTransferred(
         bytes32 indexed previousCertificateId,
         bytes32 indexed newCertificateId,
@@ -357,7 +365,7 @@ contract CornicularRegistry is
         }
         _requireCertificateActor(certificate);
         certificate.status = Status.REVOKED;
-        emit FileRevoked(certificateId, msg.sender);
+        emit FileRevoked(certificateId, certificate.issuer, msg.sender);
     }
 
     /// @notice Marks a certificate removed.
@@ -368,7 +376,7 @@ contract CornicularRegistry is
         }
         _requireCertificateActor(certificate);
         certificate.status = Status.REMOVED;
-        emit FileRemoved(certificateId, msg.sender);
+        emit FileRemoved(certificateId, certificate.issuer, msg.sender);
     }
 
     function pause() external onlyRole(PAUSER_ROLE) {

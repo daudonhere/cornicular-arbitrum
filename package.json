@@ -1,0 +1,31 @@
+{
+  "name": "cornicular-arbitrum",
+  "version": "1.0.0",
+  "description": "Cornicular document integrity registry on Arbitrum",
+  "license": "MIT",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "deploy:arbitrum": "hardhat run scripts/deploy.ts --network arbitrum",
+    "deploy:sepolia": "hardhat run scripts/deploy.ts --network arbitrumSepolia",
+    "deploy:proxy:arbitrum": "hardhat run scripts/deploy-upgradeable.ts --network arbitrum",
+    "deploy:proxy:sepolia": "hardhat run scripts/deploy-upgradeable.ts --network arbitrumSepolia",
+    "upgrade:sepolia": "hardhat run scripts/upgrade.ts --network arbitrumSepolia",
+    "upgrade:arbitrum": "hardhat run scripts/upgrade.ts --network arbitrum",
+    "verify:arbitrum": "hardhat verify --network arbitrum",
+    "verify:sepolia": "hardhat verify --network arbitrumSepolia"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@nomicfoundation/hardhat-verify": "^2.0.12",
+    "@openzeppelin/contracts": "^5.2.0",
+    "@openzeppelin/contracts-upgradeable": "^5.6.1",
+    "@openzeppelin/hardhat-upgrades": "^3.9.1",
+    "dotenv": "^16.4.5",
+    "hardhat": "^2.26.0",
+    "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "stacktrace-parser": "^0.1.11"
+  }
+}

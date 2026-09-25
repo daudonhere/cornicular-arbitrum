@@ -1,0 +1,12 @@
+node_modules/
+cache/
+artifacts/
+typechain-types/
+coverage/
+coverage.json
+.env
+.env.*
+!.env.example
+.openzeppelin/
+scripts/.deployed-proxy.json
+AGENTS.md

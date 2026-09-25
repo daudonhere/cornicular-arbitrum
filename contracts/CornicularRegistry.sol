@@ -343,16 +343,10 @@ contract CornicularRegistry is
         bytes32 certificateId,
         bytes32 newFileHash,
         bytes32 newMetadataHash
-    ) external whenNotPaused returns (bytes32 newCertificateId) {
+    ) external whenNotPaused onlyIssuer returns (bytes32 newCertificateId) {
         Certificate storage certificate = certificates[certificateId];
         if (certificate.issuer == address(0)) {
             revert CertificateNotFound(certificateId);
-        }
-        if (
-            certificate.issuer != msg.sender &&
-            !hasRole(DEFAULT_ADMIN_ROLE, msg.sender)
-        ) {
-            revert InvalidOwner(msg.sender);
         }
         if (certificate.status != Status.ACTIVE) {
             revert AlreadyReplaced(certificateId);
@@ -370,7 +364,8 @@ contract CornicularRegistry is
         emit FileReplaced(certificateId, newCertificateId, msg.sender, certificate.owner);
     }
 
-    /// @notice Revokes a certificate, restricted to its actor or admin.
+    /// @notice Revokes a certificate, restricted to its owner, issuer, or
+    /// admin. Any issuer can act on any certificate.
     function revoke(bytes32 certificateId) external whenNotPaused {
         Certificate storage certificate = certificates[certificateId];
         if (certificate.issuer == address(0)) {
@@ -542,7 +537,7 @@ contract CornicularRegistry is
     ) internal view {
         if (
             certificate.owner != msg.sender &&
-            certificate.issuer != msg.sender &&
+            !hasRole(ISSUER_ROLE, msg.sender) &&
             !hasRole(DEFAULT_ADMIN_ROLE, msg.sender)
         ) {
             revert InvalidOwner(msg.sender);

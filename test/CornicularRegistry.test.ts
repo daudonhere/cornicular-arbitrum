@@ -581,6 +581,21 @@ describe("CornicularRegistry (upgradeable)", function () {
       ).to.be.revertedWithCustomError(registry, "InvalidOwner")
     })
 
+    it("any issuer can transfer a certificate registered by another issuer", async function () {
+      const { registry, deployer, issuer, other, newOwner, fileHash, metadataHash } =
+        await loadFixture(deployFixture)
+      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      const [oldId, , , oldOwner] = await registry.verify(fileHash)
+      expect(oldOwner).to.equal(issuer.address)
+      await registry
+        .connect(deployer)
+        .grantRole(await registry.ISSUER_ROLE(), other.address)
+      await registry.connect(other).transferOwnership(oldId, newOwner.address)
+      const [, , , owner, status] = await registry.verify(fileHash)
+      expect(owner).to.equal(newOwner.address)
+      expect(status).to.equal(0)
+    })
+
     it("reverts transfer to zero address", async function () {
       const { registry, issuer, fileHash, metadataHash } =
         await loadFixture(deployFixture)
@@ -680,7 +695,19 @@ describe("CornicularRegistry (upgradeable)", function () {
       ).to.be.revertedWithCustomError(registry, "CertificateNotFound")
     })
 
-    it("rejects replace by another issuer", async function () {
+    it("rejects replace from a non-issuer", async function () {
+      const { registry, deployer, issuer, fileHash, metadataHash } =
+        await loadFixture(deployFixture)
+      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      const [oldId] = await registry.verify(fileHash)
+      const newHash = ethers.keccak256(ethers.toUtf8Bytes("non-issuer-replace-v2"))
+      const newMeta = ethers.keccak256(ethers.toUtf8Bytes("non-issuer-replace-meta"))
+      await expect(
+        registry.connect(deployer).replace(oldId, newHash, newMeta)
+      ).to.be.revertedWithCustomError(registry, "NotIssuer")
+    })
+
+    it("any issuer can replace a certificate registered by another issuer", async function () {
       const { registry, deployer, issuer, other, fileHash, metadataHash } =
         await loadFixture(deployFixture)
       await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
@@ -690,19 +717,9 @@ describe("CornicularRegistry (upgradeable)", function () {
         .grantRole(await registry.ISSUER_ROLE(), other.address)
       const newHash = ethers.keccak256(ethers.toUtf8Bytes("cross-issuer-v2"))
       const newMeta = ethers.keccak256(ethers.toUtf8Bytes("cross-issuer-meta"))
-      await expect(
-        registry.connect(other).replace(oldId, newHash, newMeta)
-      ).to.be.revertedWithCustomError(registry, "InvalidOwner")
-    })
-
-    it("admin can replace any certificate", async function () {
-      const { registry, deployer, issuer, fileHash, metadataHash } =
-        await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
-      const [oldId] = await registry.verify(fileHash)
-      const newHash = ethers.keccak256(ethers.toUtf8Bytes("admin-replace-v2"))
-      const newMeta = ethers.keccak256(ethers.toUtf8Bytes("admin-replace-meta"))
-      await registry.connect(deployer).replace(oldId, newHash, newMeta)
+      const tx = await registry.connect(other).replace(oldId, newHash, newMeta)
+      const receipt = await tx.wait()
+      expect(receipt?.status).to.equal(1)
       const [newId] = await registry.verify(newHash)
       expect(newId).to.not.equal(oldId)
     })
@@ -774,6 +791,32 @@ describe("CornicularRegistry (upgradeable)", function () {
       await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
       const [certificateId] = await registry.verify(fileHash)
       await registry.connect(deployer).remove(certificateId)
+      const [, , , , status] = await registry.verify(fileHash)
+      expect(status).to.equal(3)
+    })
+
+    it("any issuer can revoke a certificate registered by another issuer", async function () {
+      const { registry, deployer, issuer, other, fileHash, metadataHash } =
+        await loadFixture(deployFixture)
+      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      const [certificateId] = await registry.verify(fileHash)
+      await registry
+        .connect(deployer)
+        .grantRole(await registry.ISSUER_ROLE(), other.address)
+      await registry.connect(other).revoke(certificateId)
+      const [, , , , status] = await registry.verify(fileHash)
+      expect(status).to.equal(2)
+    })
+
+    it("any issuer can remove a certificate registered by another issuer", async function () {
+      const { registry, deployer, issuer, other, fileHash, metadataHash } =
+        await loadFixture(deployFixture)
+      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      const [certificateId] = await registry.verify(fileHash)
+      await registry
+        .connect(deployer)
+        .grantRole(await registry.ISSUER_ROLE(), other.address)
+      await registry.connect(other).remove(certificateId)
       const [, , , , status] = await registry.verify(fileHash)
       expect(status).to.equal(3)
     })

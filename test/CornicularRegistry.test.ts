@@ -337,12 +337,12 @@ describe("CornicularRegistry (upgradeable)", function () {
       ).to.be.revertedWithCustomError(registry, "InvalidSignature")
     })
 
-    it("increments nonce after successful registration", async function () {
+    it("increments issuer nonce after successful registration", async function () {
       const { registry, issuer, other, chainId } =
         await loadFixture(deployFixture)
       const fileHash = ethers.keccak256(ethers.toUtf8Bytes("nonce-inc-file"))
       const metaHash = ethers.keccak256(ethers.toUtf8Bytes("nonce-inc-meta"))
-      const nonceBefore = await registry.getNonce(other.address)
+      const nonceBefore = await registry.getNonce(issuer.address)
       const deadline = Math.floor(Date.now() / 1000) + 3600
       const domain = await eip712Domain(registry, chainId)
       const value = {
@@ -354,8 +354,32 @@ describe("CornicularRegistry (upgradeable)", function () {
       }
       const signature = await issuer.signTypedData(domain, EIP712_TYPES, value)
       await registry.connect(other).registerWithSignature(value, signature)
-      const nonceAfter = await registry.getNonce(other.address)
+      const nonceAfter = await registry.getNonce(issuer.address)
       expect(nonceAfter).to.equal(nonceBefore + 1n)
+    })
+
+    it("rejects replay of the same signature via a different relayer", async function () {
+      const { registry, issuer, other, newOwner, chainId } =
+        await loadFixture(deployFixture)
+      const fileHash = ethers.keccak256(ethers.toUtf8Bytes("replay-file"))
+      const metaHash = ethers.keccak256(ethers.toUtf8Bytes("replay-meta"))
+      const nonce = await registry.getNonce(issuer.address)
+      const deadline = Math.floor(Date.now() / 1000) + 3600
+      const domain = await eip712Domain(registry, chainId)
+      const value = {
+        fileHash: fileHash,
+        metadataHash: metaHash,
+        owner: newOwner.address,
+        nonce: nonce,
+        deadline: deadline,
+      }
+      const signature = await issuer.signTypedData(domain, EIP712_TYPES, value)
+      await registry.connect(other).registerWithSignature(value, signature)
+      await expect(
+        registry.connect(newOwner).registerWithSignature(value, signature)
+      ).to.be.revertedWithCustomError(registry, "NonceAlreadyUsed")
+      const certs = await registry.getFileCertificates(fileHash)
+      expect(certs.length).to.equal(1)
     })
 
     it("reverts signature registration while paused", async function () {
@@ -461,6 +485,15 @@ describe("CornicularRegistry (upgradeable)", function () {
       await expect(
         registry.connect(other).registerRoot(fakeRoot, 10)
       ).to.be.revertedWithCustomError(registry, "NotIssuer")
+    })
+
+    it("reverts registering the same root twice", async function () {
+      const { registry, issuer } = await loadFixture(deployFixture)
+      const root = ethers.keccak256(ethers.toUtf8Bytes("dup-root"))
+      await registry.connect(issuer).registerRoot(root, 4)
+      await expect(
+        registry.connect(issuer).registerRoot(root, 4)
+      ).to.be.revertedWithCustomError(registry, "MerkleRootAlreadyRegistered")
     })
 
     it("reverts registerIntoRoot for non-existent root", async function () {
@@ -647,6 +680,33 @@ describe("CornicularRegistry (upgradeable)", function () {
       ).to.be.revertedWithCustomError(registry, "CertificateNotFound")
     })
 
+    it("rejects replace by another issuer", async function () {
+      const { registry, deployer, issuer, other, fileHash, metadataHash } =
+        await loadFixture(deployFixture)
+      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      const [oldId] = await registry.verify(fileHash)
+      await registry
+        .connect(deployer)
+        .grantRole(await registry.ISSUER_ROLE(), other.address)
+      const newHash = ethers.keccak256(ethers.toUtf8Bytes("cross-issuer-v2"))
+      const newMeta = ethers.keccak256(ethers.toUtf8Bytes("cross-issuer-meta"))
+      await expect(
+        registry.connect(other).replace(oldId, newHash, newMeta)
+      ).to.be.revertedWithCustomError(registry, "InvalidOwner")
+    })
+
+    it("admin can replace any certificate", async function () {
+      const { registry, deployer, issuer, fileHash, metadataHash } =
+        await loadFixture(deployFixture)
+      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      const [oldId] = await registry.verify(fileHash)
+      const newHash = ethers.keccak256(ethers.toUtf8Bytes("admin-replace-v2"))
+      const newMeta = ethers.keccak256(ethers.toUtf8Bytes("admin-replace-meta"))
+      await registry.connect(deployer).replace(oldId, newHash, newMeta)
+      const [newId] = await registry.verify(newHash)
+      expect(newId).to.not.equal(oldId)
+    })
+
     it("reverts revoke on non-existent certificate", async function () {
       const { registry, issuer } = await loadFixture(deployFixture)
       const fakeId = ethers.keccak256(ethers.toUtf8Bytes("ghost"))
@@ -661,6 +721,41 @@ describe("CornicularRegistry (upgradeable)", function () {
       await expect(
         registry.connect(issuer).remove(fakeId)
       ).to.be.revertedWithCustomError(registry, "CertificateNotFound")
+    })
+
+    it("reverts revoke on a replaced certificate", async function () {
+      const { registry, issuer, fileHash, metadataHash } =
+        await loadFixture(deployFixture)
+      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      const [oldId] = await registry.verify(fileHash)
+      const newHash = ethers.keccak256(ethers.toUtf8Bytes("revoked-replaced-v2"))
+      const newMeta = ethers.keccak256(ethers.toUtf8Bytes("revoked-replaced-meta"))
+      await registry.connect(issuer).replace(oldId, newHash, newMeta)
+      await expect(
+        registry.connect(issuer).revoke(oldId)
+      ).to.be.revertedWithCustomError(registry, "CertificateNotActive")
+    })
+
+    it("reverts remove on a revoked certificate", async function () {
+      const { registry, issuer, fileHash, metadataHash } =
+        await loadFixture(deployFixture)
+      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      const [certificateId] = await registry.verify(fileHash)
+      await registry.connect(issuer).revoke(certificateId)
+      await expect(
+        registry.connect(issuer).remove(certificateId)
+      ).to.be.revertedWithCustomError(registry, "CertificateNotActive")
+    })
+
+    it("reverts double revoke of a revoked certificate", async function () {
+      const { registry, issuer, fileHash, metadataHash } =
+        await loadFixture(deployFixture)
+      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      const [certificateId] = await registry.verify(fileHash)
+      await registry.connect(issuer).revoke(certificateId)
+      await expect(
+        registry.connect(issuer).revoke(certificateId)
+      ).to.be.revertedWithCustomError(registry, "CertificateNotActive")
     })
 
     it("admin can revoke any certificate", async function () {
@@ -957,6 +1052,16 @@ describe("CornicularRegistry (upgradeable)", function () {
           .revokeRole(await registry.ISSUER_ROLE(), issuer.address)
       ).to.emit(registry, "IssuerRoleRevoked")
       expect(await registry.isIssuer(issuer.address)).to.equal(false)
+    })
+
+    it("emits IssuerRoleGranted when admin grants the issuer role", async function () {
+      const { registry, deployer, other } = await loadFixture(deployFixture)
+      await expect(
+        registry
+          .connect(deployer)
+          .grantRole(await registry.ISSUER_ROLE(), other.address)
+      ).to.emit(registry, "IssuerRoleGranted")
+      expect(await registry.isIssuer(other.address)).to.equal(true)
     })
   })
 })

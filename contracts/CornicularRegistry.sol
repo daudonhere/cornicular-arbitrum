@@ -109,6 +109,7 @@ contract CornicularRegistry is
     event ContractUpgraded(address indexed admin, uint256 version);
 
     error CertificateNotFound(bytes32 certificateId);
+    error CertificateNotActive(bytes32 certificateId);
     error FileNotRegistered(bytes32 fileHash);
     error InvalidSignature(bytes32 certificateId);
     error SignatureExpired(uint256 deadline);
@@ -116,7 +117,7 @@ contract CornicularRegistry is
     error AlreadyReplaced(bytes32 certificateId);
     error ArrayLengthMismatch(uint256 hashes, uint256 metadatas);
     error MerkleRootNotFound(bytes32 merkleRoot);
-    error LeafNotInRoot(bytes32 merkleRoot);
+    error MerkleRootAlreadyRegistered(bytes32 merkleRoot);
     error InvalidMerkleProof(bytes32 merkleRoot, bytes32 leaf);
     error InvalidOwner(address owner);
     error NotIssuer(address sender);
@@ -126,6 +127,11 @@ contract CornicularRegistry is
             revert NotIssuer(msg.sender);
         }
         _;
+    }
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
     }
 
     /// @notice Initializes the proxy implementation. Called once by the
@@ -141,7 +147,6 @@ contract CornicularRegistry is
         _grantRole(PAUSER_ROLE, admin);
         if (initialIssuer != address(0)) {
             _grantRole(ISSUER_ROLE, initialIssuer);
-            emit IssuerRoleGranted(initialIssuer);
         }
         emit ContractUpgraded(admin, 1);
     }
@@ -210,12 +215,6 @@ contract CornicularRegistry is
         if (block.timestamp > request.deadline) {
             revert SignatureExpired(request.deadline);
         }
-        uint256 currentNonce = nonces[msg.sender];
-        if (request.nonce != currentNonce) {
-            revert NonceAlreadyUsed(request.nonce);
-        }
-        nonces[msg.sender] = currentNonce + 1;
-
         bytes32 digest = _hashTypedDataV4(
             keccak256(
                 abi.encode(
@@ -232,6 +231,11 @@ contract CornicularRegistry is
         if (!hasRole(ISSUER_ROLE, signer)) {
             revert InvalidSignature(request.fileHash);
         }
+        uint256 currentNonce = nonces[signer];
+        if (request.nonce != currentNonce) {
+            revert NonceAlreadyUsed(request.nonce);
+        }
+        nonces[signer] = currentNonce + 1;
         certificateId = _issueCertificate(
             request.fileHash,
             request.metadataHash,
@@ -248,6 +252,9 @@ contract CornicularRegistry is
         bytes32 merkleRoot,
         uint256 leafCount
     ) external whenNotPaused onlyIssuer {
+        if (merkleRoots[merkleRoot].exists) {
+            revert MerkleRootAlreadyRegistered(merkleRoot);
+        }
         merkleRoots[merkleRoot] = MerkleRootRecord({
             issuer: msg.sender,
             leafCount: leafCount,
@@ -336,10 +343,16 @@ contract CornicularRegistry is
         bytes32 certificateId,
         bytes32 newFileHash,
         bytes32 newMetadataHash
-    ) external whenNotPaused onlyIssuer returns (bytes32 newCertificateId) {
+    ) external whenNotPaused returns (bytes32 newCertificateId) {
         Certificate storage certificate = certificates[certificateId];
         if (certificate.issuer == address(0)) {
             revert CertificateNotFound(certificateId);
+        }
+        if (
+            certificate.issuer != msg.sender &&
+            !hasRole(DEFAULT_ADMIN_ROLE, msg.sender)
+        ) {
+            revert InvalidOwner(msg.sender);
         }
         if (certificate.status != Status.ACTIVE) {
             revert AlreadyReplaced(certificateId);
@@ -364,6 +377,9 @@ contract CornicularRegistry is
             revert CertificateNotFound(certificateId);
         }
         _requireCertificateActor(certificate);
+        if (certificate.status != Status.ACTIVE) {
+            revert CertificateNotActive(certificateId);
+        }
         certificate.status = Status.REVOKED;
         emit FileRevoked(certificateId, certificate.issuer, msg.sender);
     }
@@ -375,6 +391,9 @@ contract CornicularRegistry is
             revert CertificateNotFound(certificateId);
         }
         _requireCertificateActor(certificate);
+        if (certificate.status != Status.ACTIVE) {
+            revert CertificateNotActive(certificateId);
+        }
         certificate.status = Status.REMOVED;
         emit FileRemoved(certificateId, certificate.issuer, msg.sender);
     }
@@ -528,6 +547,17 @@ contract CornicularRegistry is
         ) {
             revert InvalidOwner(msg.sender);
         }
+    }
+
+    function _grantRole(
+        bytes32 role,
+        address account
+    ) internal virtual override returns (bool) {
+        bool result = super._grantRole(role, account);
+        if (role == ISSUER_ROLE) {
+            emit IssuerRoleGranted(account);
+        }
+        return result;
     }
 
     function _revokeRole(

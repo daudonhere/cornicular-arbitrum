@@ -4,7 +4,7 @@ Smart contract for Cornicular file integrity on the Arbitrum blockchain.
 
 ## Contract
 
-`CornicularRegistry.sol` registers file hashes on-chain and provides a tamper-proof verification source of truth.
+`CornicularRegistry.sol` registers file hashes on-chain and provides a tamper-proof proof source of truth.
 
 ### Roles (AccessControl)
 
@@ -18,7 +18,7 @@ Smart contract for Cornicular file integrity on the Arbitrum blockchain.
 
 1. Backend computes `fileHash` (SHA-256 of file) + `metadataHash` (SHA-256 of metadata JSON).
 2. Issuer calls `register(fileHash, metadataHash, owner)` -> on-chain `certificateId`. Issuer = caller, owner = the account that owns the file.
-3. Public can `verify(fileHash)` -> certificate + status.
+3. Public can `prove(fileHash)` -> certificate + status.
 4. `revoke` / `replace` / `remove` update status. Status enum: `ACTIVE`, `REPLACED`, `REVOKED`, `REMOVED`.
 
 EIP-712 gasless registration via `registerWithSignature(RegisterRequest, signature)` is also supported. The signed request carries `owner`, so issuer signs off-chain while the file is owned by the given account.

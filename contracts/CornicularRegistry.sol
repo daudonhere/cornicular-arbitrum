@@ -437,8 +437,9 @@ contract CornicularRegistry is
         );
     }
 
-    /// @notice Returns the latest certificate for a file hash.
-    function verify(
+    /// @notice Returns the latest certificate for a file hash to prove
+    /// its current state.
+    function prove(
         bytes32 fileHash
     )
         external

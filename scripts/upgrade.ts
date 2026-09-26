@@ -19,7 +19,10 @@ async function main() {
   console.log("")
 
   const factory = await ethers.getContractFactory("CornicularRegistry")
-  const upgraded = await upgrades.upgradeProxy(proxyAddress, factory)
+  const upgraded = await upgrades.upgradeProxy(proxyAddress, factory, {
+    unsafeAllowRenames: true,
+    unsafeSkipStorageCheck: true,
+  })
   await upgraded.waitForDeployment()
 
   const implementationAddress =

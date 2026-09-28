@@ -2,10 +2,10 @@ import { expect } from "chai"
 import { ethers, upgrades } from "hardhat"
 import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers"
 
-function leaf(fileHash: string, metadataHash: string): string {
+function leaf(fileHash: string, metadataHash: string, owner: string): string {
   return ethers.solidityPackedKeccak256(
-    ["bytes32", "bytes32"],
-    [fileHash, metadataHash]
+    ["bytes32", "bytes32", "address"],
+    [fileHash, metadataHash, owner]
   )
 }
 
@@ -407,30 +407,80 @@ describe("CornicularRegistry (upgradeable)", function () {
 
   describe("merkle batch", function () {
     it("registers a root and issues members via proof", async function () {
-      const { registry, issuer, newOwner } = await loadFixture(deployFixture)
+      const { registry, issuer, other, newOwner } = await loadFixture(deployFixture)
       const leaves = ["a", "b", "c", "d"].map((s) =>
         ethers.keccak256(ethers.toUtf8Bytes(s))
       )
       const metas = ["m-a", "m-b", "m-c", "m-d"].map((s) =>
         ethers.keccak256(ethers.toUtf8Bytes(s))
       )
+      const owners = [issuer.address, issuer.address, newOwner.address, other.address]
       if (leaves.length !== 4) throw new Error("fixture mismatch")
-      const treeLeaves = ["a", "b", "c", "d"].map((s, i) =>
-        leaf(leaves[i], metas[i])
-      )
+      const treeLeaves = leaves.map((h, i) => leaf(h, metas[i], owners[i]))
       const { root, proof } = buildMerkleTree(treeLeaves)
 
       await registry.connect(issuer).registerRoot(root, 4)
       expect(await registry.verifyMember(root, treeLeaves[2], proof(treeLeaves[2]))).to.equal(true)
 
       const tx = await registry
-        .connect(issuer)
+        .connect(other)
         .registerIntoRoot(leaves[2], metas[2], root, proof(treeLeaves[2]), newOwner.address)
       const receipt = await tx.wait()
       expect(receipt?.status).to.equal(1)
       const [, , issuerAddr, owner] = await registry.prove(leaves[2])
       expect(issuerAddr).to.equal(issuer.address)
       expect(owner).to.equal(newOwner.address)
+    })
+
+    it("allows a non-issuer to claim their own member", async function () {
+      const { registry, issuer, other } = await loadFixture(deployFixture)
+      const leaves = ["x", "y"].map((s) =>
+        ethers.keccak256(ethers.toUtf8Bytes(s))
+      )
+      const metas = ["m-x", "m-y"].map((s) =>
+        ethers.keccak256(ethers.toUtf8Bytes(s))
+      )
+      const treeLeaves = [
+        leaf(leaves[0], metas[0], other.address),
+        leaf(leaves[1], metas[1], issuer.address),
+      ]
+      const { root, proof } = buildMerkleTree(treeLeaves)
+
+      await registry.connect(issuer).registerRoot(root, 2)
+      const tx = await registry
+        .connect(other)
+        .registerIntoRoot(leaves[0], metas[0], root, proof(treeLeaves[0]), other.address)
+      const receipt = await tx.wait()
+      expect(receipt?.status).to.equal(1)
+      const [, , issuerAddr, owner] = await registry.prove(leaves[0])
+      expect(issuerAddr).to.equal(issuer.address)
+      expect(owner).to.equal(other.address)
+    })
+
+    it("rejects claiming a member with a different owner", async function () {
+      const { registry, issuer, newOwner } = await loadFixture(deployFixture)
+      const leaves = ["a", "b"].map((s) =>
+        ethers.keccak256(ethers.toUtf8Bytes(s))
+      )
+      const metas = ["m-a", "m-b"].map((s) =>
+        ethers.keccak256(ethers.toUtf8Bytes(s))
+      )
+      const owners = [issuer.address, newOwner.address]
+      const treeLeaves = leaves.map((h, i) => leaf(h, metas[i], owners[i]))
+      const { root, proof } = buildMerkleTree(treeLeaves)
+
+      await registry.connect(issuer).registerRoot(root, 2)
+      await expect(
+        registry
+          .connect(newOwner)
+          .registerIntoRoot(
+            leaves[0],
+            metas[0],
+            root,
+            proof(treeLeaves[0]),
+            newOwner.address
+          )
+      ).to.be.revertedWithCustomError(registry, "InvalidMerkleProof")
     })
 
     it("reverts registerIntoRoot with zero owner", async function () {
@@ -441,7 +491,10 @@ describe("CornicularRegistry (upgradeable)", function () {
       const metas = ["m-a", "m-b"].map((s) =>
         ethers.keccak256(ethers.toUtf8Bytes(s))
       )
-      const treeLeaves = [leaf(leaves[0], metas[0]), leaf(leaves[1], metas[1])]
+      const treeLeaves = [
+        leaf(leaves[0], metas[0], issuer.address),
+        leaf(leaves[1], metas[1], issuer.address),
+      ]
       const { root, proof } = buildMerkleTree(treeLeaves)
       await registry.connect(issuer).registerRoot(root, 2)
       await expect(
@@ -465,7 +518,10 @@ describe("CornicularRegistry (upgradeable)", function () {
       const metas = ["m-a", "m-b"].map((s) =>
         ethers.keccak256(ethers.toUtf8Bytes(s))
       )
-      const treeLeaves = [leaf(leaves[0], metas[0]), leaf(leaves[1], metas[1])]
+      const treeLeaves = [
+        leaf(leaves[0], metas[0], issuer.address),
+        leaf(leaves[1], metas[1], issuer.address),
+      ]
       const { root, proof } = buildMerkleTree(treeLeaves)
 
       await registry.connect(issuer).registerRoot(root, 2)

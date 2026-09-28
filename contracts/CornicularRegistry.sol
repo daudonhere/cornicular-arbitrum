@@ -265,29 +265,32 @@ contract CornicularRegistry is
     }
 
     /// @notice Issues a certificate for a file that is a verified member
-    /// of a previously committed Merkle root. Issuer is the caller, owner
-    /// is the given account.
+    /// of a previously committed Merkle root. The leaf binds the owner, so
+    /// any account may claim a member as long as it passes the correct
+    /// owner. Issuer is the account that committed the root (the treasury),
+    /// owner is the given account.
     function registerIntoRoot(
         bytes32 fileHash,
         bytes32 metadataHash,
         bytes32 merkleRoot,
         bytes32[] calldata proof,
         address owner
-    ) external whenNotPaused onlyIssuer returns (bytes32 certificateId) {
+    ) external whenNotPaused returns (bytes32 certificateId) {
         if (owner == address(0)) {
             revert InvalidOwner(owner);
         }
-        bytes32 leaf = _leaf(fileHash, metadataHash);
-        if (!merkleRoots[merkleRoot].exists) {
+        MerkleRootRecord storage record = merkleRoots[merkleRoot];
+        if (!record.exists) {
             revert MerkleRootNotFound(merkleRoot);
         }
+        bytes32 leaf = _leaf(fileHash, metadataHash, owner);
         if (!_verifyMerkleProof(merkleRoot, leaf, proof)) {
             revert InvalidMerkleProof(merkleRoot, leaf);
         }
         certificateId = _issueCertificate(
             fileHash,
             metadataHash,
-            msg.sender,
+            record.issuer,
             owner,
             merkleRoot,
             proof
@@ -569,9 +572,10 @@ contract CornicularRegistry is
 
     function _leaf(
         bytes32 fileHash,
-        bytes32 metadataHash
+        bytes32 metadataHash,
+        address owner
     ) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked(fileHash, metadataHash));
+        return keccak256(abi.encodePacked(fileHash, metadataHash, owner));
     }
 
     function _verifyMerkleProof(

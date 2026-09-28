@@ -10,7 +10,7 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 /// @title CornicularRegistry
 /// @notice Upgradeable file integrity registry deployed behind a
 /// transparent proxy. Tracks certificates keyed by a derived id, supports
-/// versioning, ownership transfer and Merkle-batched registration.
+/// versioning, ownership transfer and Merkle-batched notarization.
 /// @dev Upgradeable pattern: initializer instead of constructor, OZ
 /// upgradeable base contracts, reserved __gap for future storage.
 contract CornicularRegistry is
@@ -36,14 +36,14 @@ contract CornicularRegistry is
         address issuer;
         address owner;
         Status status;
-        uint256 registeredAt;
+        uint256 notarizedAt;
         bytes32 previousVersionId;
         bytes32 parentMerkleRoot;
         bytes32[] merkleProof;
     }
 
-    /// @notice Off-chain signed payload for permissionless registration.
-    struct RegisterRequest {
+    /// @notice Off-chain signed payload for permissionless notarization.
+    struct NotarizeRequest {
         bytes32 fileHash;
         bytes32 metadataHash;
         address owner;
@@ -55,13 +55,13 @@ contract CornicularRegistry is
     struct MerkleRootRecord {
         address issuer;
         uint256 leafCount;
-        uint256 registeredAt;
+        uint256 notarizedAt;
         bool exists;
     }
 
-    bytes32 private constant REGISTER_REQUEST_TYPEHASH =
+    bytes32 private constant NOTARIZE_REQUEST_TYPEHASH =
         keccak256(
-            "RegisterRequest(bytes32 fileHash,bytes32 metadataHash,address owner,uint256 nonce,uint256 deadline)"
+            "NotarizeRequest(bytes32 fileHash,bytes32 metadataHash,address owner,uint256 nonce,uint256 deadline)"
         );
 
     mapping(bytes32 => Certificate) private certificates;
@@ -70,12 +70,12 @@ contract CornicularRegistry is
     mapping(address => uint256) private nonces;
     mapping(bytes32 => MerkleRootRecord) private merkleRoots;
 
-    event FileRegistered(
+    event FileNotarized(
         bytes32 indexed certificateId,
         bytes32 indexed fileHash,
         bytes32 metadataHash,
         address indexed issuer,
-        uint256 registeredAt
+        uint256 notarizedAt
     );
     event FileRevoked(
         bytes32 indexed certificateId,
@@ -101,7 +101,7 @@ contract CornicularRegistry is
     );
     event IssuerRoleGranted(address indexed issuer);
     event IssuerRoleRevoked(address indexed issuer);
-    event MerkleRootRegistered(
+    event MerkleRootNotarized(
         bytes32 indexed merkleRoot,
         uint256 leafCount,
         address indexed issuer
@@ -110,14 +110,14 @@ contract CornicularRegistry is
 
     error CertificateNotFound(bytes32 certificateId);
     error CertificateNotActive(bytes32 certificateId);
-    error FileNotRegistered(bytes32 fileHash);
+    error FileNotNotarized(bytes32 fileHash);
     error InvalidSignature(bytes32 certificateId);
     error SignatureExpired(uint256 deadline);
     error NonceAlreadyUsed(uint256 nonce);
     error AlreadyReplaced(bytes32 certificateId);
     error ArrayLengthMismatch(uint256 hashes, uint256 metadatas);
     error MerkleRootNotFound(bytes32 merkleRoot);
-    error MerkleRootAlreadyRegistered(bytes32 merkleRoot);
+    error MerkleRootAlreadyNotarized(bytes32 merkleRoot);
     error InvalidMerkleProof(bytes32 merkleRoot, bytes32 leaf);
     error InvalidOwner(address owner);
     error NotIssuer(address sender);
@@ -151,9 +151,9 @@ contract CornicularRegistry is
         emit ContractUpgraded(admin, 1);
     }
 
-    /// @notice Registers a single file standalone. Issuer is the caller,
+    /// @notice Notarizes a single file standalone. Issuer is the caller,
     /// owner is the given account.
-    function register(
+    function notarize(
         bytes32 fileHash,
         bytes32 metadataHash,
         address owner
@@ -171,9 +171,9 @@ contract CornicularRegistry is
         );
     }
 
-    /// @notice Registers several files in one transaction under the same
+    /// @notice Notarizes several files in one transaction under the same
     /// owner.
-    function registerBatch(
+    function notarizeBatch(
         bytes32[] calldata fileHashes,
         bytes32[] calldata metadataHashes,
         address owner
@@ -203,10 +203,10 @@ contract CornicularRegistry is
         }
     }
 
-    /// @notice Registers a file from an off-chain signature. Issuer is
+    /// @notice Notarizes a file from an off-chain signature. Issuer is
     /// the recovered signer, owner comes from the signed request.
-    function registerWithSignature(
-        RegisterRequest calldata request,
+    function notarizeWithSignature(
+        NotarizeRequest calldata request,
         bytes calldata signature
     ) external whenNotPaused returns (bytes32 certificateId) {
         if (request.owner == address(0)) {
@@ -218,7 +218,7 @@ contract CornicularRegistry is
         bytes32 digest = _hashTypedDataV4(
             keccak256(
                 abi.encode(
-                    REGISTER_REQUEST_TYPEHASH,
+                    NOTARIZE_REQUEST_TYPEHASH,
                     request.fileHash,
                     request.metadataHash,
                     request.owner,
@@ -248,20 +248,20 @@ contract CornicularRegistry is
 
     /// @notice Commits a Merkle root as an aggregated batch. Atomically
     /// stores the batch so members can later be issued certificates.
-    function registerRoot(
+    function notarizeRoot(
         bytes32 merkleRoot,
         uint256 leafCount
     ) external whenNotPaused onlyIssuer {
         if (merkleRoots[merkleRoot].exists) {
-            revert MerkleRootAlreadyRegistered(merkleRoot);
+            revert MerkleRootAlreadyNotarized(merkleRoot);
         }
         merkleRoots[merkleRoot] = MerkleRootRecord({
             issuer: msg.sender,
             leafCount: leafCount,
-            registeredAt: block.timestamp,
+            notarizedAt: block.timestamp,
             exists: true
         });
-        emit MerkleRootRegistered(merkleRoot, leafCount, msg.sender);
+        emit MerkleRootNotarized(merkleRoot, leafCount, msg.sender);
     }
 
     /// @notice Issues a certificate for a file that is a verified member
@@ -269,7 +269,7 @@ contract CornicularRegistry is
     /// any account may claim a member as long as it passes the correct
     /// owner. Issuer is the account that committed the root (the treasury),
     /// owner is the given account.
-    function registerIntoRoot(
+    function notarizeIntoRoot(
         bytes32 fileHash,
         bytes32 metadataHash,
         bytes32 merkleRoot,
@@ -417,7 +417,7 @@ contract CornicularRegistry is
             address issuer,
             address owner,
             uint8 status,
-            uint256 registeredAt,
+            uint256 notarizedAt,
             bytes32 previousVersionId,
             bytes32 parentMerkleRoot,
             bytes32[] memory merkleProof
@@ -433,7 +433,7 @@ contract CornicularRegistry is
             certificate.issuer,
             certificate.owner,
             uint8(certificate.status),
-            certificate.registeredAt,
+            certificate.notarizedAt,
             certificate.previousVersionId,
             certificate.parentMerkleRoot,
             certificate.merkleProof
@@ -453,12 +453,12 @@ contract CornicularRegistry is
             address issuer,
             address owner,
             uint8 status,
-            uint256 registeredAt
+            uint256 notarizedAt
         )
     {
         certificateId = latestCertificate[fileHash];
         if (certificateId == bytes32(0)) {
-            revert FileNotRegistered(fileHash);
+            revert FileNotNotarized(fileHash);
         }
         Certificate memory certificate = certificates[certificateId];
         return (
@@ -467,7 +467,7 @@ contract CornicularRegistry is
             certificate.issuer,
             certificate.owner,
             uint8(certificate.status),
-            certificate.registeredAt
+            certificate.notarizedAt
         );
     }
 
@@ -490,10 +490,10 @@ contract CornicularRegistry is
     )
         external
         view
-        returns (address issuer, uint256 leafCount, uint256 registeredAt)
+        returns (address issuer, uint256 leafCount, uint256 notarizedAt)
     {
         MerkleRootRecord memory record = merkleRoots[merkleRoot];
-        return (record.issuer, record.leafCount, record.registeredAt);
+        return (record.issuer, record.leafCount, record.notarizedAt);
     }
 
     /// @notice Issues a certificate and updates all bookkeeping mappings.
@@ -520,14 +520,14 @@ contract CornicularRegistry is
             issuer: issuer,
             owner: owner,
             status: Status.ACTIVE,
-            registeredAt: block.timestamp,
+            notarizedAt: block.timestamp,
             previousVersionId: bytes32(0),
             parentMerkleRoot: parentMerkleRoot,
             merkleProof: merkleProof
         });
         fileCertificates[fileHash].push(certificateId);
         latestCertificate[fileHash] = certificateId;
-        emit FileRegistered(
+        emit FileNotarized(
             certificateId,
             fileHash,
             metadataHash,

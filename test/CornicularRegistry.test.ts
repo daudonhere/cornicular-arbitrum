@@ -61,7 +61,7 @@ async function eip712Domain(registry: any, chainId: bigint) {
 }
 
 const EIP712_TYPES = {
-  RegisterRequest: [
+  NotarizeRequest: [
     { name: "fileHash", type: "bytes32" },
     { name: "metadataHash", type: "bytes32" },
     { name: "owner", type: "address" },
@@ -126,13 +126,13 @@ describe("CornicularRegistry (upgradeable)", function () {
     })
   })
 
-  describe("register", function () {
-    it("registers a file with explicit owner different from issuer", async function () {
+  describe("notarize", function () {
+    it("notarizes a file with explicit owner different from issuer", async function () {
       const { registry, issuer, newOwner, fileHash, metadataHash } =
         await loadFixture(deployFixture)
       const tx = await registry
         .connect(issuer)
-        .register(fileHash, metadataHash, newOwner.address)
+        .notarize(fileHash, metadataHash, newOwner.address)
       const receipt = await tx.wait()
       const event = receipt?.logs
         .map((log) => {
@@ -142,7 +142,7 @@ describe("CornicularRegistry (upgradeable)", function () {
             return null
           }
         })
-        .find((parsed) => parsed?.name === "FileRegistered")
+        .find((parsed) => parsed?.name === "FileNotarized")
       expect(event).to.not.equal(undefined)
       const certificateId = event?.args.certificateId as string
       expect(certificateId).to.match(/^0x[0-9a-f]{64}$/)
@@ -151,25 +151,25 @@ describe("CornicularRegistry (upgradeable)", function () {
       expect(owner).to.equal(newOwner.address)
     })
 
-    it("reverts register with zero owner", async function () {
+    it("reverts notarize with zero owner", async function () {
       const { registry, issuer, fileHash, metadataHash } =
         await loadFixture(deployFixture)
       await expect(
         registry
           .connect(issuer)
-          .register(fileHash, metadataHash, ethers.ZeroAddress)
+          .notarize(fileHash, metadataHash, ethers.ZeroAddress)
       ).to.be.revertedWithCustomError(registry, "InvalidOwner")
     })
 
-    it("rejects non-issuer registration", async function () {
+    it("rejects non-issuer notarization", async function () {
       const { registry, other, fileHash, metadataHash } =
         await loadFixture(deployFixture)
       await expect(
-        registry.connect(other).register(fileHash, metadataHash, other.address)
+        registry.connect(other).notarize(fileHash, metadataHash, other.address)
       ).to.be.revertedWithCustomError(registry, "NotIssuer")
     })
 
-    it("registers a batch", async function () {
+    it("notarizes a batch", async function () {
       const { registry, issuer } = await loadFixture(deployFixture)
       const hashes = [
         ethers.keccak256(ethers.toUtf8Bytes("file-a")),
@@ -181,7 +181,7 @@ describe("CornicularRegistry (upgradeable)", function () {
         ethers.keccak256(ethers.toUtf8Bytes("meta-b")),
         ethers.keccak256(ethers.toUtf8Bytes("meta-c")),
       ]
-      const tx = await registry.connect(issuer).registerBatch(hashes, metas, issuer.address)
+      const tx = await registry.connect(issuer).notarizeBatch(hashes, metas, issuer.address)
       const receipt = await tx.wait()
       expect(receipt?.status).to.equal(1)
       const ids = await registry.getFileCertificates(hashes[0])
@@ -196,7 +196,7 @@ describe("CornicularRegistry (upgradeable)", function () {
       ]
       const metas = [ethers.keccak256(ethers.toUtf8Bytes("meta-x"))]
       await expect(
-        registry.connect(issuer).registerBatch(hashes, metas, issuer.address)
+        registry.connect(issuer).notarizeBatch(hashes, metas, issuer.address)
       ).to.be.revertedWithCustomError(registry, "ArrayLengthMismatch")
     })
 
@@ -205,7 +205,7 @@ describe("CornicularRegistry (upgradeable)", function () {
       const hashes = [ethers.keccak256(ethers.toUtf8Bytes("file-z"))]
       const metas = [ethers.keccak256(ethers.toUtf8Bytes("meta-z"))]
       await expect(
-        registry.connect(other).registerBatch(hashes, metas, other.address)
+        registry.connect(other).notarizeBatch(hashes, metas, other.address)
       ).to.be.revertedWithCustomError(registry, "NotIssuer")
     })
 
@@ -216,22 +216,22 @@ describe("CornicularRegistry (upgradeable)", function () {
       await expect(
         registry
           .connect(issuer)
-          .registerBatch(hashes, metas, ethers.ZeroAddress)
+          .notarizeBatch(hashes, metas, ethers.ZeroAddress)
       ).to.be.revertedWithCustomError(registry, "InvalidOwner")
     })
 
-    it("reverts registration while paused", async function () {
+    it("reverts notarization while paused", async function () {
       const { registry, deployer, issuer, fileHash, metadataHash } =
         await loadFixture(deployFixture)
       await registry.connect(deployer).pause()
       await expect(
-        registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+        registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       ).to.be.revertedWithCustomError(registry, "EnforcedPause")
     })
   })
 
-  describe("registerWithSignature", function () {
-    it("registers via valid issuer signature with owner from request", async function () {
+  describe("notarizeWithSignature", function () {
+    it("notarizes via valid issuer signature with owner from request", async function () {
       const { registry, issuer, other, newOwner, chainId } =
         await loadFixture(deployFixture)
       const fileHash = ethers.keccak256(ethers.toUtf8Bytes("sig-file"))
@@ -247,13 +247,13 @@ describe("CornicularRegistry (upgradeable)", function () {
         deadline: deadline,
       }
       const signature = await issuer.signTypedData(domain, EIP712_TYPES, value)
-      await registry.connect(other).registerWithSignature(value, signature)
+      await registry.connect(other).notarizeWithSignature(value, signature)
       const [, , issuerAddr, ownerAddr] = await registry.prove(fileHash)
       expect(issuerAddr).to.equal(issuer.address)
       expect(ownerAddr).to.equal(newOwner.address)
     })
 
-    it("reverts signature registration with zero owner", async function () {
+    it("reverts signature notarization with zero owner", async function () {
       const { registry, issuer, other, chainId } =
         await loadFixture(deployFixture)
       const fileHash = ethers.keccak256(ethers.toUtf8Bytes("zero-owner-file"))
@@ -270,7 +270,7 @@ describe("CornicularRegistry (upgradeable)", function () {
       }
       const signature = await issuer.signTypedData(domain, EIP712_TYPES, value)
       await expect(
-        registry.connect(other).registerWithSignature(value, signature)
+        registry.connect(other).notarizeWithSignature(value, signature)
       ).to.be.revertedWithCustomError(registry, "InvalidOwner")
     })
 
@@ -291,7 +291,7 @@ describe("CornicularRegistry (upgradeable)", function () {
       }
       const signature = await issuer.signTypedData(domain, EIP712_TYPES, value)
       await expect(
-        registry.connect(other).registerWithSignature(value, signature)
+        registry.connect(other).notarizeWithSignature(value, signature)
       ).to.be.revertedWithCustomError(registry, "SignatureExpired")
     })
 
@@ -312,7 +312,7 @@ describe("CornicularRegistry (upgradeable)", function () {
       }
       const signature = await issuer.signTypedData(domain, EIP712_TYPES, value)
       await expect(
-        registry.connect(other).registerWithSignature(value, signature)
+        registry.connect(other).notarizeWithSignature(value, signature)
       ).to.be.revertedWithCustomError(registry, "NonceAlreadyUsed")
     })
 
@@ -333,11 +333,11 @@ describe("CornicularRegistry (upgradeable)", function () {
       }
       const signature = await other.signTypedData(domain, EIP712_TYPES, value)
       await expect(
-        registry.connect(issuer).registerWithSignature(value, signature)
+        registry.connect(issuer).notarizeWithSignature(value, signature)
       ).to.be.revertedWithCustomError(registry, "InvalidSignature")
     })
 
-    it("increments issuer nonce after successful registration", async function () {
+    it("increments issuer nonce after successful notarization", async function () {
       const { registry, issuer, other, chainId } =
         await loadFixture(deployFixture)
       const fileHash = ethers.keccak256(ethers.toUtf8Bytes("nonce-inc-file"))
@@ -353,7 +353,7 @@ describe("CornicularRegistry (upgradeable)", function () {
         deadline: deadline,
       }
       const signature = await issuer.signTypedData(domain, EIP712_TYPES, value)
-      await registry.connect(other).registerWithSignature(value, signature)
+      await registry.connect(other).notarizeWithSignature(value, signature)
       const nonceAfter = await registry.getNonce(issuer.address)
       expect(nonceAfter).to.equal(nonceBefore + 1n)
     })
@@ -374,15 +374,15 @@ describe("CornicularRegistry (upgradeable)", function () {
         deadline: deadline,
       }
       const signature = await issuer.signTypedData(domain, EIP712_TYPES, value)
-      await registry.connect(other).registerWithSignature(value, signature)
+      await registry.connect(other).notarizeWithSignature(value, signature)
       await expect(
-        registry.connect(newOwner).registerWithSignature(value, signature)
+        registry.connect(newOwner).notarizeWithSignature(value, signature)
       ).to.be.revertedWithCustomError(registry, "NonceAlreadyUsed")
       const certs = await registry.getFileCertificates(fileHash)
       expect(certs.length).to.equal(1)
     })
 
-    it("reverts signature registration while paused", async function () {
+    it("reverts signature notarization while paused", async function () {
       const { registry, deployer, issuer, other, chainId } =
         await loadFixture(deployFixture)
       const fileHash = ethers.keccak256(ethers.toUtf8Bytes("paused-sig-file"))
@@ -400,13 +400,13 @@ describe("CornicularRegistry (upgradeable)", function () {
       const signature = await issuer.signTypedData(domain, EIP712_TYPES, value)
       await registry.connect(deployer).pause()
       await expect(
-        registry.connect(other).registerWithSignature(value, signature)
+        registry.connect(other).notarizeWithSignature(value, signature)
       ).to.be.revertedWithCustomError(registry, "EnforcedPause")
     })
   })
 
   describe("merkle batch", function () {
-    it("registers a root and issues members via proof", async function () {
+    it("notarizes a root and issues members via proof", async function () {
       const { registry, issuer, other, newOwner } = await loadFixture(deployFixture)
       const leaves = ["a", "b", "c", "d"].map((s) =>
         ethers.keccak256(ethers.toUtf8Bytes(s))
@@ -419,12 +419,12 @@ describe("CornicularRegistry (upgradeable)", function () {
       const treeLeaves = leaves.map((h, i) => leaf(h, metas[i], owners[i]))
       const { root, proof } = buildMerkleTree(treeLeaves)
 
-      await registry.connect(issuer).registerRoot(root, 4)
+      await registry.connect(issuer).notarizeRoot(root, 4)
       expect(await registry.verifyMember(root, treeLeaves[2], proof(treeLeaves[2]))).to.equal(true)
 
       const tx = await registry
         .connect(other)
-        .registerIntoRoot(leaves[2], metas[2], root, proof(treeLeaves[2]), newOwner.address)
+        .notarizeIntoRoot(leaves[2], metas[2], root, proof(treeLeaves[2]), newOwner.address)
       const receipt = await tx.wait()
       expect(receipt?.status).to.equal(1)
       const [, , issuerAddr, owner] = await registry.prove(leaves[2])
@@ -446,10 +446,10 @@ describe("CornicularRegistry (upgradeable)", function () {
       ]
       const { root, proof } = buildMerkleTree(treeLeaves)
 
-      await registry.connect(issuer).registerRoot(root, 2)
+      await registry.connect(issuer).notarizeRoot(root, 2)
       const tx = await registry
         .connect(other)
-        .registerIntoRoot(leaves[0], metas[0], root, proof(treeLeaves[0]), other.address)
+        .notarizeIntoRoot(leaves[0], metas[0], root, proof(treeLeaves[0]), other.address)
       const receipt = await tx.wait()
       expect(receipt?.status).to.equal(1)
       const [, , issuerAddr, owner] = await registry.prove(leaves[0])
@@ -469,11 +469,11 @@ describe("CornicularRegistry (upgradeable)", function () {
       const treeLeaves = leaves.map((h, i) => leaf(h, metas[i], owners[i]))
       const { root, proof } = buildMerkleTree(treeLeaves)
 
-      await registry.connect(issuer).registerRoot(root, 2)
+      await registry.connect(issuer).notarizeRoot(root, 2)
       await expect(
         registry
           .connect(newOwner)
-          .registerIntoRoot(
+          .notarizeIntoRoot(
             leaves[0],
             metas[0],
             root,
@@ -483,7 +483,7 @@ describe("CornicularRegistry (upgradeable)", function () {
       ).to.be.revertedWithCustomError(registry, "InvalidMerkleProof")
     })
 
-    it("reverts registerIntoRoot with zero owner", async function () {
+    it("reverts notarizeIntoRoot with zero owner", async function () {
       const { registry, issuer } = await loadFixture(deployFixture)
       const leaves = ["a", "b"].map((s) =>
         ethers.keccak256(ethers.toUtf8Bytes(s))
@@ -496,11 +496,11 @@ describe("CornicularRegistry (upgradeable)", function () {
         leaf(leaves[1], metas[1], issuer.address),
       ]
       const { root, proof } = buildMerkleTree(treeLeaves)
-      await registry.connect(issuer).registerRoot(root, 2)
+      await registry.connect(issuer).notarizeRoot(root, 2)
       await expect(
         registry
           .connect(issuer)
-          .registerIntoRoot(
+          .notarizeIntoRoot(
             leaves[0],
             metas[0],
             root,
@@ -524,41 +524,41 @@ describe("CornicularRegistry (upgradeable)", function () {
       ]
       const { root, proof } = buildMerkleTree(treeLeaves)
 
-      await registry.connect(issuer).registerRoot(root, 2)
+      await registry.connect(issuer).notarizeRoot(root, 2)
 
       const badProof = proof(treeLeaves[1])
       const badFlips = badProof.map(() => ethers.ZeroHash)
       await expect(
         registry
           .connect(issuer)
-          .registerIntoRoot(leaves[0], metas[0], root, badFlips, issuer.address)
+          .notarizeIntoRoot(leaves[0], metas[0], root, badFlips, issuer.address)
       ).to.be.revertedWithCustomError(registry, "InvalidMerkleProof")
     })
 
-    it("reverts registerRoot from non-issuer", async function () {
+    it("reverts notarizeRoot from non-issuer", async function () {
       const { registry, other } = await loadFixture(deployFixture)
       const fakeRoot = ethers.keccak256(ethers.toUtf8Bytes("fake-root"))
       await expect(
-        registry.connect(other).registerRoot(fakeRoot, 10)
+        registry.connect(other).notarizeRoot(fakeRoot, 10)
       ).to.be.revertedWithCustomError(registry, "NotIssuer")
     })
 
-    it("reverts registering the same root twice", async function () {
+    it("reverts notarizing the same root twice", async function () {
       const { registry, issuer } = await loadFixture(deployFixture)
       const root = ethers.keccak256(ethers.toUtf8Bytes("dup-root"))
-      await registry.connect(issuer).registerRoot(root, 4)
+      await registry.connect(issuer).notarizeRoot(root, 4)
       await expect(
-        registry.connect(issuer).registerRoot(root, 4)
-      ).to.be.revertedWithCustomError(registry, "MerkleRootAlreadyRegistered")
+        registry.connect(issuer).notarizeRoot(root, 4)
+      ).to.be.revertedWithCustomError(registry, "MerkleRootAlreadyNotarized")
     })
 
-    it("reverts registerIntoRoot for non-existent root", async function () {
+    it("reverts notarizeIntoRoot for non-existent root", async function () {
       const { registry, issuer } = await loadFixture(deployFixture)
       const fakeRoot = ethers.keccak256(ethers.toUtf8Bytes("no-root"))
       const fileHash = ethers.keccak256(ethers.toUtf8Bytes("orphan-file"))
       const metaHash = ethers.keccak256(ethers.toUtf8Bytes("orphan-meta"))
       await expect(
-        registry.connect(issuer).registerIntoRoot(fileHash, metaHash, fakeRoot, [], issuer.address)
+        registry.connect(issuer).notarizeIntoRoot(fileHash, metaHash, fakeRoot, [], issuer.address)
       ).to.be.revertedWithCustomError(registry, "MerkleRootNotFound")
     })
 
@@ -572,22 +572,22 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("returns correct getMerkleRoot data", async function () {
       const { registry, issuer } = await loadFixture(deployFixture)
       const root = ethers.keccak256(ethers.toUtf8Bytes("mr-root"))
-      await registry.connect(issuer).registerRoot(root, 5)
-      const [issuerAddr, leafCount, registeredAt] =
+      await registry.connect(issuer).notarizeRoot(root, 5)
+      const [issuerAddr, leafCount, notarizedAt] =
         await registry.getMerkleRoot(root)
       expect(issuerAddr).to.equal(issuer.address)
       expect(leafCount).to.equal(5)
-      expect(registeredAt).to.be.gt(0)
+      expect(notarizedAt).to.be.gt(0)
     })
 
     it("getMerkleRoot returns zero values for non-existent root", async function () {
       const { registry } = await loadFixture(deployFixture)
       const fakeRoot = ethers.keccak256(ethers.toUtf8Bytes("nope"))
-      const [issuerAddr, leafCount, registeredAt] =
+      const [issuerAddr, leafCount, notarizedAt] =
         await registry.getMerkleRoot(fakeRoot)
       expect(issuerAddr).to.equal(ethers.ZeroAddress)
       expect(leafCount).to.equal(0)
-      expect(registeredAt).to.equal(0)
+      expect(notarizedAt).to.equal(0)
     })
   })
 
@@ -595,7 +595,7 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("transfers ownership producing a new version and moving owner", async function () {
       const { registry, issuer, other, newOwner, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [oldId, , , oldOwner] = await registry.prove(fileHash)
       expect(oldOwner).to.equal(issuer.address)
 
@@ -630,17 +630,17 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("allows only actor or admin to transfer", async function () {
       const { registry, issuer, other, newOwner, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [certificateId] = await registry.prove(fileHash)
       await expect(
         registry.connect(other).transferOwnership(certificateId, newOwner.address)
       ).to.be.revertedWithCustomError(registry, "InvalidOwner")
     })
 
-    it("any issuer can transfer a certificate registered by another issuer", async function () {
+    it("any issuer can transfer a certificate notarized by another issuer", async function () {
       const { registry, deployer, issuer, other, newOwner, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [oldId, , , oldOwner] = await registry.prove(fileHash)
       expect(oldOwner).to.equal(issuer.address)
       await registry
@@ -655,7 +655,7 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("reverts transfer to zero address", async function () {
       const { registry, issuer, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [certificateId] = await registry.prove(fileHash)
       await expect(
         registry
@@ -675,7 +675,7 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("reverts transfer of replaced certificate", async function () {
       const { registry, issuer, newOwner, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [oldId] = await registry.prove(fileHash)
       const newHash = ethers.keccak256(ethers.toUtf8Bytes("v2-for-transfer"))
       const newMeta = ethers.keccak256(ethers.toUtf8Bytes("meta-v2-transfer"))
@@ -690,7 +690,7 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("revokes an active certificate as its issuer", async function () {
       const { registry, issuer, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [certificateId] = await registry.prove(fileHash)
       await registry.connect(issuer).revoke(certificateId)
       const [, , , , status] = await registry.prove(fileHash)
@@ -700,7 +700,7 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("replaces an active certificate preserving owner", async function () {
       const { registry, issuer, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [oldId, , , oldOwner] = await registry.prove(fileHash)
       const newHash = ethers.keccak256(ethers.toUtf8Bytes("file-v2"))
       const newMeta = ethers.keccak256(ethers.toUtf8Bytes("meta-v2"))
@@ -719,7 +719,7 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("removes an active certificate", async function () {
       const { registry, issuer, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [certificateId] = await registry.prove(fileHash)
       await registry.connect(issuer).remove(certificateId)
       const [, , , , status] = await registry.prove(fileHash)
@@ -729,7 +729,7 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("reverts replace on already replaced certificate", async function () {
       const { registry, issuer, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [oldId] = await registry.prove(fileHash)
       const newHash = ethers.keccak256(ethers.toUtf8Bytes("v2"))
       const newMeta = ethers.keccak256(ethers.toUtf8Bytes("meta-v2"))
@@ -754,7 +754,7 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("rejects replace from a non-issuer", async function () {
       const { registry, deployer, issuer, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [oldId] = await registry.prove(fileHash)
       const newHash = ethers.keccak256(ethers.toUtf8Bytes("non-issuer-replace-v2"))
       const newMeta = ethers.keccak256(ethers.toUtf8Bytes("non-issuer-replace-meta"))
@@ -763,10 +763,10 @@ describe("CornicularRegistry (upgradeable)", function () {
       ).to.be.revertedWithCustomError(registry, "NotIssuer")
     })
 
-    it("any issuer can replace a certificate registered by another issuer", async function () {
+    it("any issuer can replace a certificate notarized by another issuer", async function () {
       const { registry, deployer, issuer, other, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [oldId] = await registry.prove(fileHash)
       await registry
         .connect(deployer)
@@ -799,7 +799,7 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("reverts revoke on a replaced certificate", async function () {
       const { registry, issuer, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [oldId] = await registry.prove(fileHash)
       const newHash = ethers.keccak256(ethers.toUtf8Bytes("revoked-replaced-v2"))
       const newMeta = ethers.keccak256(ethers.toUtf8Bytes("revoked-replaced-meta"))
@@ -812,7 +812,7 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("reverts remove on a revoked certificate", async function () {
       const { registry, issuer, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [certificateId] = await registry.prove(fileHash)
       await registry.connect(issuer).revoke(certificateId)
       await expect(
@@ -823,7 +823,7 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("reverts double revoke of a revoked certificate", async function () {
       const { registry, issuer, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [certificateId] = await registry.prove(fileHash)
       await registry.connect(issuer).revoke(certificateId)
       await expect(
@@ -834,7 +834,7 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("admin can revoke any certificate", async function () {
       const { registry, deployer, issuer, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [certificateId] = await registry.prove(fileHash)
       await registry.connect(deployer).revoke(certificateId)
       const [, , , , status] = await registry.prove(fileHash)
@@ -844,17 +844,17 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("admin can remove any certificate", async function () {
       const { registry, deployer, issuer, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [certificateId] = await registry.prove(fileHash)
       await registry.connect(deployer).remove(certificateId)
       const [, , , , status] = await registry.prove(fileHash)
       expect(status).to.equal(3)
     })
 
-    it("any issuer can revoke a certificate registered by another issuer", async function () {
+    it("any issuer can revoke a certificate notarized by another issuer", async function () {
       const { registry, deployer, issuer, other, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [certificateId] = await registry.prove(fileHash)
       await registry
         .connect(deployer)
@@ -864,10 +864,10 @@ describe("CornicularRegistry (upgradeable)", function () {
       expect(status).to.equal(2)
     })
 
-    it("any issuer can remove a certificate registered by another issuer", async function () {
+    it("any issuer can remove a certificate notarized by another issuer", async function () {
       const { registry, deployer, issuer, other, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [certificateId] = await registry.prove(fileHash)
       await registry
         .connect(deployer)
@@ -880,7 +880,7 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("non-actor non-admin cannot revoke", async function () {
       const { registry, issuer, other, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [certificateId] = await registry.prove(fileHash)
       await expect(
         registry.connect(other).revoke(certificateId)
@@ -890,7 +890,7 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("non-actor non-admin cannot remove", async function () {
       const { registry, issuer, other, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [certificateId] = await registry.prove(fileHash)
       await expect(
         registry.connect(other).remove(certificateId)
@@ -902,7 +902,7 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("getCertificate returns full details for existing certificate", async function () {
       const { registry, issuer, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [certificateId] = await registry.prove(fileHash)
       const [
         file,
@@ -910,7 +910,7 @@ describe("CornicularRegistry (upgradeable)", function () {
         issuerAddr,
         ownerAddr,
         status,
-        registeredAt,
+        notarizedAt,
         prevVersion,
         merkleRoot,
         merkleProof,
@@ -920,7 +920,7 @@ describe("CornicularRegistry (upgradeable)", function () {
       expect(issuerAddr).to.equal(issuer.address)
       expect(ownerAddr).to.equal(issuer.address)
       expect(status).to.equal(0)
-      expect(registeredAt).to.be.gt(0)
+      expect(notarizedAt).to.be.gt(0)
       expect(prevVersion).to.equal(ethers.ZeroHash)
       expect(merkleRoot).to.equal(ethers.ZeroHash)
       expect(merkleProof.length).to.equal(0)
@@ -934,18 +934,18 @@ describe("CornicularRegistry (upgradeable)", function () {
       ).to.be.revertedWithCustomError(registry, "CertificateNotFound")
     })
 
-    it("prove reverts for unregistered file", async function () {
+    it("prove reverts for unnotarized file", async function () {
       const { registry } = await loadFixture(deployFixture)
-      const fakeFile = ethers.keccak256(ethers.toUtf8Bytes("never-registered"))
+      const fakeFile = ethers.keccak256(ethers.toUtf8Bytes("never-notarized"))
       await expect(
         registry.prove(fakeFile)
-      ).to.be.revertedWithCustomError(registry, "FileNotRegistered")
+      ).to.be.revertedWithCustomError(registry, "FileNotNotarized")
     })
 
     it("getFileCertificates returns version history", async function () {
       const { registry, issuer, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const v1 = await registry.getFileCertificates(fileHash)
       expect(v1.length).to.equal(1)
 
@@ -971,17 +971,17 @@ describe("CornicularRegistry (upgradeable)", function () {
   })
 
   describe("pause", function () {
-    it("blocks registration while paused", async function () {
+    it("blocks notarization while paused", async function () {
       const { registry, deployer, issuer, fileHash, metadataHash } =
         await loadFixture(deployFixture)
       await registry.connect(deployer).pause()
       await expect(
-        registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+        registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       ).to.be.revertedWithCustomError(registry, "EnforcedPause")
       await registry.connect(deployer).unpause()
       await expect(
-        registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
-      ).to.emit(registry, "FileRegistered")
+        registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
+      ).to.emit(registry, "FileNotarized")
     })
 
     it("only pauser can pause", async function () {
@@ -1002,7 +1002,7 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("blocks transfer while paused", async function () {
       const { registry, deployer, issuer, newOwner, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [certificateId] = await registry.prove(fileHash)
       await registry.connect(deployer).pause()
       await expect(
@@ -1013,7 +1013,7 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("blocks revoke while paused", async function () {
       const { registry, deployer, issuer, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [certificateId] = await registry.prove(fileHash)
       await registry.connect(deployer).pause()
       await expect(
@@ -1023,10 +1023,10 @@ describe("CornicularRegistry (upgradeable)", function () {
   })
 
   describe("events", function () {
-    it("emits FileRegistered on register", async function () {
+    it("emits FileNotarized on notarize", async function () {
       const { registry, issuer, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      const tx = await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      const tx = await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const receipt = await tx.wait()
       const event = receipt?.logs
         .map((log) => {
@@ -1036,7 +1036,7 @@ describe("CornicularRegistry (upgradeable)", function () {
             return null
           }
         })
-        .find((parsed) => parsed?.name === "FileRegistered")
+        .find((parsed) => parsed?.name === "FileNotarized")
       expect(event).to.not.equal(undefined)
       expect(event?.args.fileHash).to.equal(fileHash)
       expect(event?.args.metadataHash).to.equal(metadataHash)
@@ -1046,7 +1046,7 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("emits FileRevoked with issuer and revoking actor", async function () {
       const { registry, issuer, newOwner, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, newOwner.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, newOwner.address)
       const [certificateId] = await registry.prove(fileHash)
       await expect(registry.connect(newOwner).revoke(certificateId))
         .to.emit(registry, "FileRevoked")
@@ -1056,7 +1056,7 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("emits FileReplaced on replace", async function () {
       const { registry, issuer, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [oldId] = await registry.prove(fileHash)
       const newHash = ethers.keccak256(ethers.toUtf8Bytes("v2-event"))
       const newMeta = ethers.keccak256(ethers.toUtf8Bytes("meta-v2-event"))
@@ -1080,7 +1080,7 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("emits FileRemoved with issuer and removing actor", async function () {
       const { registry, issuer, newOwner, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, newOwner.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, newOwner.address)
       const [certificateId] = await registry.prove(fileHash)
       await expect(registry.connect(newOwner).remove(certificateId))
         .to.emit(registry, "FileRemoved")
@@ -1090,7 +1090,7 @@ describe("CornicularRegistry (upgradeable)", function () {
     it("emits FileOwnershipTransferred on transfer", async function () {
       const { registry, issuer, newOwner, fileHash, metadataHash } =
         await loadFixture(deployFixture)
-      await registry.connect(issuer).register(fileHash, metadataHash, issuer.address)
+      await registry.connect(issuer).notarize(fileHash, metadataHash, issuer.address)
       const [oldId] = await registry.prove(fileHash)
       const tx = await registry
         .connect(issuer)
@@ -1109,10 +1109,10 @@ describe("CornicularRegistry (upgradeable)", function () {
       expect(ownership).to.not.equal(undefined)
     })
 
-    it("emits MerkleRootRegistered on registerRoot", async function () {
+    it("emits MerkleRootNotarized on notarizeRoot", async function () {
       const { registry, issuer } = await loadFixture(deployFixture)
       const root = ethers.keccak256(ethers.toUtf8Bytes("event-root"))
-      const tx = await registry.connect(issuer).registerRoot(root, 3)
+      const tx = await registry.connect(issuer).notarizeRoot(root, 3)
       const receipt = await tx.wait()
       const events = receipt?.logs
         .map((log) => {
@@ -1123,7 +1123,7 @@ describe("CornicularRegistry (upgradeable)", function () {
           }
         })
         .filter(Boolean)
-      const merkle = events?.find((e) => e?.name === "MerkleRootRegistered")
+      const merkle = events?.find((e) => e?.name === "MerkleRootNotarized")
       expect(merkle).to.not.equal(undefined)
     })
 

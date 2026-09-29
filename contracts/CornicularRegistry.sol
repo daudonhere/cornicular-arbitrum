@@ -166,8 +166,7 @@ contract CornicularRegistry is
             metadataHash,
             msg.sender,
             owner,
-            bytes32(0),
-            new bytes32[](0)
+            bytes32(0)
         );
     }
 
@@ -197,8 +196,7 @@ contract CornicularRegistry is
                 metadataHashes[i],
                 msg.sender,
                 owner,
-                bytes32(0),
-                new bytes32[](0)
+                bytes32(0)
             );
         }
     }
@@ -241,8 +239,7 @@ contract CornicularRegistry is
             request.metadataHash,
             signer,
             request.owner,
-            bytes32(0),
-            new bytes32[](0)
+            bytes32(0)
         );
     }
 
@@ -292,8 +289,7 @@ contract CornicularRegistry is
             metadataHash,
             record.issuer,
             owner,
-            merkleRoot,
-            proof
+            merkleRoot
         );
     }
 
@@ -332,8 +328,7 @@ contract CornicularRegistry is
             certificate.metadataHash,
             certificate.issuer,
             newOwner,
-            certificate.parentMerkleRoot,
-            certificate.merkleProof
+            certificate.parentMerkleRoot
         );
         certificate.status = Status.REPLACED;
         certificates[newCertificateId].previousVersionId = certificateId;
@@ -359,8 +354,7 @@ contract CornicularRegistry is
             newMetadataHash,
             msg.sender,
             certificate.owner,
-            bytes32(0),
-            new bytes32[](0)
+            bytes32(0)
         );
         certificate.status = Status.REPLACED;
         certificates[newCertificateId].previousVersionId = certificateId;
@@ -502,8 +496,7 @@ contract CornicularRegistry is
         bytes32 metadataHash,
         address issuer,
         address owner,
-        bytes32 parentMerkleRoot,
-        bytes32[] memory merkleProof
+        bytes32 parentMerkleRoot
     ) internal returns (bytes32 certificateId) {
         certificateId = keccak256(
             abi.encodePacked(
@@ -514,17 +507,16 @@ contract CornicularRegistry is
                 fileCertificates[fileHash].length
             )
         );
-        certificates[certificateId] = Certificate({
-            fileHash: fileHash,
-            metadataHash: metadataHash,
-            issuer: issuer,
-            owner: owner,
-            status: Status.ACTIVE,
-            notarizedAt: block.timestamp,
-            previousVersionId: bytes32(0),
-            parentMerkleRoot: parentMerkleRoot,
-            merkleProof: merkleProof
-        });
+        Certificate storage certificate = certificates[certificateId];
+        certificate.fileHash = fileHash;
+        certificate.metadataHash = metadataHash;
+        certificate.issuer = issuer;
+        certificate.status = Status.ACTIVE;
+        certificate.owner = owner;
+        certificate.notarizedAt = block.timestamp;
+        if (parentMerkleRoot != bytes32(0)) {
+            certificate.parentMerkleRoot = parentMerkleRoot;
+        }
         fileCertificates[fileHash].push(certificateId);
         latestCertificate[fileHash] = certificateId;
         emit FileNotarized(

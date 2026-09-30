@@ -10,8 +10,8 @@
     "deploy:sepolia": "hardhat run scripts/deploy.ts --network arbitrumSepolia",
     "deploy:proxy:arbitrum": "hardhat run scripts/deploy-upgradeable.ts --network arbitrum",
     "deploy:proxy:sepolia": "hardhat run scripts/deploy-upgradeable.ts --network arbitrumSepolia",
-    "upgrade:sepolia": "hardhat run scripts/upgrade.ts --network arbitrumSepolia",
-    "upgrade:arbitrum": "hardhat run scripts/upgrade.ts --network arbitrum",
+    "deploy:code:arbitrum": "hardhat run scripts/deploy-code.ts --network arbitrum",
+    "deploy:code:sepolia": "hardhat run scripts/deploy-code.ts --network arbitrumSepolia",
     "verify:arbitrum": "hardhat verify --network arbitrum",
     "verify:sepolia": "hardhat verify --network arbitrumSepolia"
   },
